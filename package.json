@@ -1,0 +1,17 @@
+{
+  "name": "claim-shield",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claim-Shield Pre-Submission Audit System Workspace",
+  "scripts": {
+    "dev": "npx --yes concurrently -k -p \"[{name}]\" -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend start",
+    "build": "npm --prefix frontend run build",
+    "install:all": "npm --prefix frontend install && npm --prefix backend install"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ]
+}
