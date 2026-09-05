@@ -5,7 +5,8 @@ import {
   Clock,
   ArrowRight,
   RefreshCw,
-  CheckCircle
+  CheckCircle,
+  FileText
 } from 'lucide-react';
 
 import { Claim, AuditResult } from '../types';
@@ -16,10 +17,46 @@ interface AuditHistoryProps {
 }
 
 /*
- * Format a Supabase timestamp using the actual stored time.
+ * ============================================================
+ * DATE / TIME HELPERS
+ * ============================================================
  *
- * Supabase normally stores timestamps in UTC.
- * The browser converts the timestamp to IST here.
+ * Supabase stores timestamps in UTC.
+ *
+ * Example:
+ *
+ * 2026-09-06T02:47:18.321Z
+ *
+ * The functions below convert the timestamp to Indian
+ * Standard Time (Asia/Kolkata) before displaying it.
+ */
+
+/**
+ * Get the actual timestamp associated with an audit.
+ *
+ * audited_at = actual time when the audit was executed
+ * created_at = fallback for older audit records
+ */
+const getAuditTimestamp = (
+  audit: AuditResult
+): string | undefined => {
+  const auditRecord = audit as AuditResult & {
+    audited_at?: string;
+  };
+
+  return (
+    auditRecord.audited_at ||
+    auditRecord.created_at
+  );
+};
+
+
+/**
+ * Format a timestamp as:
+ *
+ * 06 Sep 2026, 08:17:18 am
+ *
+ * using IST.
  */
 const formatDateTime = (
   timestamp?: string | null
@@ -46,8 +83,13 @@ const formatDateTime = (
   });
 };
 
-/*
- * Format only the time.
+
+/**
+ * Format time only.
+ *
+ * Example:
+ *
+ * 08:17:18 am
  */
 const formatTime = (
   timestamp?: string | null
@@ -71,73 +113,125 @@ const formatTime = (
   });
 };
 
-/*
- * Get the timestamp from an audit result.
+
+/**
+ * Format date only.
  *
- * Supabase audit_results uses audited_at.
- * The fallback to created_at also supports older records.
+ * Example:
+ *
+ * 06 Sep 2026
  */
-const getAuditTimestamp = (
-  audit: AuditResult
-): string | undefined => {
-  return (
-    (audit as any).audited_at ||
-    audit.created_at
-  );
+const formatDate = (
+  timestamp?: string | null
+): string => {
+  if (!timestamp) {
+    return 'Date unavailable';
+  }
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Date unavailable';
+  }
+
+  return date.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
 };
+
 
 export const AuditHistory: React.FC<AuditHistoryProps> = ({
   onSelectClaim
 }) => {
-  const [claims, setClaims] = useState<Claim[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   /*
-   * Load audit history from Supabase.
+   * ============================================================
+   * STATE
+   * ============================================================
    */
+
+  const [claims, setClaims] =
+    useState<Claim[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+
+  /*
+   * ============================================================
+   * LOAD AUDIT HISTORY
+   * ============================================================
+   */
+
   const loadHistory = async () => {
     try {
+
       setRefreshing(true);
 
-      const res = await fetchClaims();
+      const result =
+        await fetchClaims();
 
       /*
-       * Sort newest claims first using the REAL
-       * Supabase created_at timestamp.
+       * Sort claims by their actual Supabase
+       * created_at timestamp.
+       *
+       * Newest claims appear first.
        */
-      const sortedClaims = [...res].sort(
-        (a, b) =>
-          new Date(
-            b.created_at
-          ).getTime() -
-          new Date(
-            a.created_at
-          ).getTime()
-      );
+      const sortedClaims =
+        [...result].sort(
+          (a, b) =>
+            new Date(
+              b.created_at
+            ).getTime() -
+            new Date(
+              a.created_at
+            ).getTime()
+        );
 
       setClaims(sortedClaims);
+
     } catch (error) {
+
       console.error(
         'Failed to load audit history:',
         error
       );
+
     } finally {
+
       setLoading(false);
       setRefreshing(false);
+
     }
   };
 
+
+  /*
+   * Load history when the page opens.
+   */
   useEffect(() => {
     loadHistory();
   }, []);
 
+
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
+
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
 
-      {/* =====================================================
-          HEADER
-      ===================================================== */}
+      {/* ======================================================
+          PAGE HEADER
+      ====================================================== */}
 
       <div className="flex items-start justify-between">
 
@@ -153,11 +247,15 @@ export const AuditHistory: React.FC<AuditHistoryProps> = ({
 
         </div>
 
+
+        {/* REFRESH */}
+
         <button
           onClick={loadHistory}
           disabled={refreshing}
           className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 disabled:opacity-50"
         >
+
           <RefreshCw
             className={`w-3.5 h-3.5 ${
               refreshing
@@ -167,22 +265,33 @@ export const AuditHistory: React.FC<AuditHistoryProps> = ({
           />
 
           Refresh
+
         </button>
 
       </div>
 
 
-      {/* =====================================================
+      {/* ======================================================
           LOADING
-      ===================================================== */}
+      ====================================================== */}
 
       {loading ? (
 
-        <div className="py-12 text-center text-xs text-slate-400">
-          Loading audit history...
+        <div className="py-12 text-center">
+
+          <RefreshCw className="w-5 h-5 animate-spin mx-auto text-slate-300" />
+
+          <p className="text-xs text-slate-400 mt-3">
+            Loading audit history from Supabase...
+          </p>
+
         </div>
 
       ) : claims.length === 0 ? (
+
+        /* ====================================================
+           NO CLAIMS
+        ==================================================== */
 
         <div className="py-16 text-center">
 
@@ -192,30 +301,52 @@ export const AuditHistory: React.FC<AuditHistoryProps> = ({
             No audit history available
           </p>
 
+          <p className="text-xs text-slate-400 mt-1">
+            Run a claim audit to create an audit history record.
+          </p>
+
         </div>
 
       ) : (
 
+        /* ====================================================
+           CLAIM LIST
+        ==================================================== */
+
         <div className="space-y-6">
 
-          {claims.map((c) => {
+          {claims.map((claim) => {
 
             /*
-             * Get all actual audit records belonging
-             * to this claim.
+             * ==================================================
+             * AUDIT RESULTS
+             * ==================================================
+             *
+             * Supabase returns:
+             *
+             * audit_results(*, findings(*))
+             *
+             * Therefore every actual audit execution can be
+             * displayed here.
              */
+
             const auditResults =
-              c.audit_results ||
+              claim.audit_results ||
               (
-                c.latest_audit
-                  ? [c.latest_audit]
+                claim.latest_audit
+                  ? [claim.latest_audit]
                   : []
               );
 
+
             /*
-             * Sort audits using the actual Supabase
-             * audited_at / created_at timestamp.
+             * Sort using audited_at.
+             *
+             * This is important:
+             *
+             * We DO NOT use hard-coded times.
              */
+
             const sortedAudits =
               [...auditResults].sort(
                 (a, b) =>
@@ -227,10 +358,26 @@ export const AuditHistory: React.FC<AuditHistoryProps> = ({
                   ).getTime()
               );
 
+
+            /*
+             * ==================================================
+             * PROCEDURE
+             * ==================================================
+             *
+             * Get the actual procedure attached to the claim.
+             */
+
+            const procedure =
+              claim.procedures &&
+              claim.procedures.length > 0
+                ? claim.procedures[0]
+                : null;
+
+
             return (
 
               <div
-                key={c.id}
+                key={claim.id}
                 className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4"
               >
 
@@ -238,38 +385,88 @@ export const AuditHistory: React.FC<AuditHistoryProps> = ({
                     CLAIM HEADER
                 ================================================= */}
 
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-start justify-between border-b border-slate-100 pb-4">
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-start gap-3">
+
+                    {/* CLAIM NUMBER */}
 
                     <span className="font-mono font-bold text-brand-600 bg-brand-50 px-3 py-1 rounded-xl text-xs border border-brand-200">
-                      {c.claim_number}
+                      {claim.claim_number}
                     </span>
+
+
+                    {/* PATIENT INFORMATION */}
 
                     <div>
 
                       <h4 className="font-bold text-slate-900 text-sm">
-                        {c.patient_name}
+                        {claim.patient_name}
                       </h4>
 
                       <p className="text-xs text-slate-400 font-mono">
-                        ID: {c.patient_id}
+                        ID: {claim.patient_id}
                       </p>
+
+
+                      {/* =================================================
+                          ACTUAL PROCEDURE
+                          ================================================= */}
+
+                      {procedure ? (
+
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+
+                          <FileText className="w-3.5 h-3.5 text-brand-500" />
+
+                          <span className="font-mono font-bold text-brand-600 text-xs">
+                            {procedure.cdt_code}
+                          </span>
+
+
+                          {procedure.description && (
+                            <span className="text-xs text-slate-600">
+                              {procedure.description}
+                            </span>
+                          )}
+
+
+                          {procedure.tooth_number && (
+                            <span className="text-[10px] font-mono text-slate-400">
+                              • Tooth #{procedure.tooth_number}
+                            </span>
+                          )}
+
+                        </div>
+
+                      ) : (
+
+                        <p className="text-[10px] text-slate-400 mt-2">
+                          No procedure information
+                        </p>
+
+                      )}
 
                     </div>
 
                   </div>
 
 
+                  {/* VIEW REPORT */}
+
                   <button
                     onClick={() =>
-                      onSelectClaim(c.id)
+                      onSelectClaim(
+                        claim.id
+                      )
                     }
                     className="text-xs font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-1"
                   >
+
                     View Report
 
                     <ArrowRight className="w-3.5 h-3.5" />
+
                   </button>
 
                 </div>
@@ -278,15 +475,18 @@ export const AuditHistory: React.FC<AuditHistoryProps> = ({
                 {/* =================================================
                     CLAIM CREATED TIME
                 ================================================= */}
-git                 <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
 
                   <Clock className="w-3.5 h-3.5" />
 
-                  Claim created:
+                  <span>
+                    Claim created:
+                  </span>
 
                   <span className="font-semibold text-slate-500">
                     {formatDateTime(
-                      c.created_at
+                      claim.created_at
                     )}
                   </span>
 
@@ -301,9 +501,10 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                   {sortedAudits.length === 0 ? (
 
-                    /*
-                     * No audit yet.
-                     */
+                    /* ===========================================
+                       NO AUDIT YET
+                    =========================================== */
+
                     <div className="relative flex items-start gap-4 pl-8">
 
                       <div className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-slate-300 ring-4 ring-white" />
@@ -318,7 +519,7 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                           <span className="text-[10px] font-mono text-slate-400">
                             {formatTime(
-                              c.created_at
+                              claim.created_at
                             )}
                           </span>
 
@@ -334,44 +535,92 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                   ) : (
 
+                    /* ===========================================
+                       REAL AUDIT RECORDS
+                    =========================================== */
+
                     sortedAudits.map(
                       (audit, index) => {
+
+                        /*
+                         * REAL AUDIT TIMESTAMP
+                         */
 
                         const timestamp =
                           getAuditTimestamp(
                             audit
                           );
 
+
+                        /*
+                         * LATEST AUDIT
+                         */
+
                         const isLatest =
                           index === 0;
 
+
+                        /*
+                         * READINESS
+                         */
+
                         const readiness =
-                          audit.readiness_score ??
-                          0;
+                          Number(
+                            audit.readiness_score ||
+                            0
+                          );
+
+
+                        /*
+                         * STATUS
+                         */
 
                         const status =
                           audit.status ||
                           'REVIEW';
 
+
+                        /*
+                         * STATUS HELPERS
+                         */
+
                         const isReady =
-                          status ===
-                          'READY' ||
+                          status === 'READY' ||
                           readiness >= 90;
 
                         const isBlocked =
-                          status ===
-                          'BLOCKED' ||
+                          status === 'BLOCKED' ||
                           readiness < 70;
 
+
+                        /*
+                         * FINDINGS
+                         */
+
+                        const findings =
+                          audit.findings ||
+                          [];
+
                         const openFindings =
-                          (
-                            audit.findings ||
-                            []
-                          ).filter(
-                            f =>
-                              f.status ===
+                          findings.filter(
+                            finding =>
+                              finding.status ===
                               'OPEN'
                           ).length;
+
+
+                        /*
+                         * SUMMARY
+                         */
+
+                        const passed =
+                          audit.summary?.passed ||
+                          0;
+
+                        const totalChecks =
+                          audit.summary?.total_checks ||
+                          0;
+
 
                         return (
 
@@ -379,12 +628,14 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                             key={
                               audit.id ||
                               audit.audit_id ||
-                              `${c.id}-${timestamp}-${index}`
+                              `${claim.id}-${timestamp}-${index}`
                             }
                             className="relative flex items-start gap-4 pl-8"
                           >
 
-                            {/* TIMELINE DOT */}
+                            {/* =================================
+                                TIMELINE DOT
+                            ================================= */}
 
                             <div
                               className={`
@@ -408,7 +659,9 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                             />
 
 
-                            {/* AUDIT CARD */}
+                            {/* =================================
+                                AUDIT CARD
+                            ================================= */}
 
                             <div
                               className={`
@@ -429,7 +682,9 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                               `}
                             >
 
-                              {/* TITLE + TIME */}
+                              {/* =================================
+                                  TITLE + REAL TIME
+                              ================================= */}
 
                               <div className="flex justify-between items-start gap-4">
 
@@ -449,9 +704,21 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                                   )}
 
+
                                   <div>
 
-                                    <span className="font-bold text-slate-800">
+                                    <span
+                                      className={`
+                                        font-bold
+                                        ${
+                                          isReady
+                                            ? 'text-emerald-950'
+                                            : isBlocked
+                                            ? 'text-red-950'
+                                            : 'text-slate-800'
+                                        }
+                                      `}
+                                    >
 
                                       {index ===
                                       sortedAudits.length - 1
@@ -460,10 +727,13 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                                     </span>
 
+
                                     {isLatest && (
+
                                       <span className="ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
                                         Latest
                                       </span>
+
                                     )}
 
                                   </div>
@@ -471,7 +741,9 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                                 </div>
 
 
-                                {/* REAL SUPABASE TIME */}
+                                {/* =================================
+                                    ACTUAL SUPABASE TIMESTAMP
+                                ================================= */}
 
                                 <div className="text-right shrink-0">
 
@@ -485,9 +757,9 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                                   <div className="text-[9px] font-mono text-slate-400 mt-0.5">
 
-                                    {formatDateTime(
+                                    {formatDate(
                                       timestamp
-                                    ).split(',')[0]}
+                                    )}
 
                                   </div>
 
@@ -496,7 +768,9 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                               </div>
 
 
-                              {/* SCORE */}
+                              {/* =================================
+                                  READINESS
+                              ================================= */}
 
                               <div className="flex items-center gap-2">
 
@@ -523,21 +797,22 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
 
                                 </span>
 
+
                                 <span className="text-slate-400">
                                   •
                                 </span>
 
+
                                 <span className="text-slate-500">
 
-                                  {audit.summary?.passed ??
-                                    0}
+                                  {passed}
 
                                   {' '}of{' '}
 
-                                  {audit.summary?.total_checks ??
-                                    0}
+                                  {totalChecks}
 
                                   {' '}
+
                                   checks passed
 
                                 </span>
@@ -545,7 +820,9 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                               </div>
 
 
-                              {/* FINDINGS */}
+                              {/* =================================
+                                  FINDINGS
+                              ================================= */}
 
                               <div className="flex items-center gap-2 text-[10px]">
 
@@ -564,27 +841,30 @@ git                 <div className="flex items-center gap-2 text-[10px] text-sla
                                     }
                                   `}
                                 >
+
                                   {openFindings}
+
                                 </span>
 
                               </div>
 
 
-                              {/* AUDIT ID */}
+                              {/* =================================
+                                  AUDIT ID
+                              ================================= */}
 
-                              {(
-                                audit.id ||
-                                audit.audit_id
-                              ) && (
+                              {(audit.id ||
+                                audit.audit_id) && (
 
                                 <div className="pt-1 border-t border-slate-200/70">
 
                                   <span className="text-[9px] font-mono text-slate-400">
+
                                     Audit ID:{' '}
-                                    {
-                                      audit.id ||
-                                      audit.audit_id
-                                    }
+
+                                    {audit.id ||
+                                      audit.audit_id}
+
                                   </span>
 
                                 </div>
