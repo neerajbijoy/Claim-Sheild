@@ -17,10 +17,32 @@ const initialPayers = [
     display_name: 'Demo Dental Insurance',
     created_at: new Date('2026-01-01').toISOString()
   },
+
   {
     id: 'p-apex-health',
     name: 'apex_health',
     display_name: 'Apex Health Dental Plan',
+    created_at: new Date('2026-01-01').toISOString()
+  },
+
+  {
+    id: 'p-guardian-dental',
+    name: 'guardian_dental',
+    display_name: 'Guardian Dental',
+    created_at: new Date('2026-01-01').toISOString()
+  },
+
+  {
+    id: 'p-metlife-dental',
+    name: 'metlife_dental',
+    display_name: 'MetLife Dental',
+    created_at: new Date('2026-01-01').toISOString()
+  },
+
+  {
+    id: 'p-cigna-dental',
+    name: 'cigna_dental',
+    display_name: 'Cigna Dental',
     created_at: new Date('2026-01-01').toISOString()
   }
 ];
