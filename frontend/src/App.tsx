@@ -8,12 +8,14 @@ import { NewAudit } from './pages/NewAudit';
 import { AuditReport } from './pages/AuditReport';
 import { AuditHistory } from './pages/AuditHistory';
 import { PayerRules } from './pages/PayerRules';
-import { Settings } from './pages/Settings';
+import { CdtLibrary } from './pages/CdtLibrary';
+import { SmartClaimAssessment } from './pages/SmartClaimAssessment';
 import { fetchHealth } from './services/api';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<string>('landing');
   const [selectedClaimId, setSelectedClaimId] = useState<string>('CLM-1001');
+  const [prefilledCdtCode, setPrefilledCdtCode] = useState<string>('D2740');
   const [latestAuditResult, setLatestAuditResult] = useState<any>(null);
   const [dbStatus, setDbStatus] = useState<string>('Local Database');
 
@@ -37,6 +39,11 @@ export function App() {
     setLatestAuditResult(auditResult);
     setSelectedClaimId(claimId);
     setActiveTab('report');
+  };
+
+  const handleStartAuditWithCode = (code: string) => {
+    setPrefilledCdtCode(code);
+    setActiveTab('new-audit');
   };
 
   // If active tab is landing, render full landing hero view
@@ -68,7 +75,12 @@ export function App() {
             <Dashboard
               onSelectClaim={handleSelectClaim}
               onNewAudit={() => setActiveTab('new-audit')}
+              onSmartAssessment={() => setActiveTab('smart-assessment')}
             />
+          )}
+
+          {activeTab === 'smart-assessment' && (
+            <SmartClaimAssessment />
           )}
 
           {activeTab === 'claims' && (
@@ -79,7 +91,10 @@ export function App() {
           )}
 
           {activeTab === 'new-audit' && (
-            <NewAudit onAuditComplete={handleAuditComplete} />
+            <NewAudit
+              onAuditComplete={handleAuditComplete}
+              initialCdtCode={prefilledCdtCode}
+            />
           )}
 
           {activeTab === 'report' && (
@@ -97,7 +112,9 @@ export function App() {
 
           {activeTab === 'payer-rules' && <PayerRules />}
 
-          {activeTab === 'settings' && <Settings />}
+          {activeTab === 'cdt-library' && (
+            <CdtLibrary onStartAuditWithCode={handleStartAuditWithCode} />
+          )}
         </main>
       </div>
     </div>

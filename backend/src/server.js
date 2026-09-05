@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config();
 
 const db = require('./config/supabase');
@@ -9,6 +11,8 @@ const claimRoutes = require('./routes/claim.routes');
 const payerRoutes = require('./routes/payer.routes');
 const documentRoutes = require('./routes/document.routes');
 const auditRoutes = require('./routes/audit.routes');
+const cdtRoutes = require('./routes/cdt.routes');
+const assessmentRoutes = require('./routes/assessment.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,8 +40,12 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/api/payers', payerRoutes);
 app.use('/api/claims', claimRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/cdt', cdtRoutes);
+app.use('/api/assessment', assessmentRoutes);
 
 // Nested routes for documents and audits
+app.use('/api/documents', documentRoutes);
 app.use('/api/claims/:id/documents', documentRoutes);
 app.use('/api/claims/:id/audit', auditRoutes);
 

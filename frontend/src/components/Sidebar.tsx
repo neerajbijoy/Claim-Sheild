@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, LayoutDashboard, FileSpreadsheet, PlusCircle, History, ScrollText, Settings, Sparkles } from 'lucide-react';
+import { Shield, LayoutDashboard, FileSpreadsheet, PlusCircle, History, ScrollText, BookOpenCheck, Sparkles } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -9,11 +9,12 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'smart-assessment', label: 'Smart Assessment', icon: Sparkles, highlight: true },
     { id: 'claims', label: 'Claims', icon: FileSpreadsheet },
-    { id: 'new-audit', label: 'New Audit', icon: PlusCircle, highlight: true },
+    { id: 'new-audit', label: 'New Audit', icon: PlusCircle },
     { id: 'history', label: 'Audit History', icon: History },
     { id: 'payer-rules', label: 'Payer Rules', icon: ScrollText },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'cdt-library', label: 'CDT Library', icon: BookOpenCheck },
   ];
 
   return (

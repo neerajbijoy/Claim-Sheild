@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { User, Stethoscope, FileText, Upload, CheckCircle, ArrowRight, ArrowLeft, Play, Sparkles, Loader2 } from 'lucide-react';
+import { User, Stethoscope, FileText, Upload, CheckCircle, ArrowRight, ArrowLeft, Play, Sparkles, Loader2, Tag, Check, AlertCircle } from 'lucide-react';
 import { ToothSelector } from '../components/ToothSelector';
 import { DocumentUploader } from '../components/DocumentUploader';
-import { Payer, ClaimDocument } from '../types';
-import { fetchPayers, createClaimApi, uploadDocumentApi, runAuditApi } from '../services/api';
+import { Payer, ClaimDocument, ExtractedEvidence } from '../types';
+import { fetchPayers, createClaimApi, uploadDocumentApi, runAuditApi, extractClinicalApi } from '../services/api';
 
 interface NewAuditProps {
   onAuditComplete: (auditResult: any, claimId: string) => void;
+  initialCdtCode?: string;
 }
 
-export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
+export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete, initialCdtCode }) => {
   const [step, setStep] = useState(1);
   const [payers, setPayers] = useState<Payer[]>([]);
 
@@ -20,15 +21,23 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
   const [selectedPayerId, setSelectedPayerId] = useState('');
 
   // Step 2: Procedure
-  const [cdtCode, setCdtCode] = useState('D2740');
+  const [cdtCode, setCdtCode] = useState(initialCdtCode || 'D2740');
+
+  useEffect(() => {
+    if (initialCdtCode) {
+      setCdtCode(initialCdtCode);
+    }
+  }, [initialCdtCode]);
   const [toothNumber, setToothNumber] = useState('14');
   const [dos, setDos] = useState('2026-08-28');
   const [claimAmount, setClaimAmount] = useState('1250');
 
-  // Step 3: Narrative
+  // Step 3: Narrative & Dynamic Clinical Extraction
   const [narrative, setNarrative] = useState(
-    'Patient presents with recurrent decay under an existing restoration on tooth #14. Tooth structure is severely compromised and requires full coverage crown restoration.'
+    'Patient presents with recurrent decay under an existing restoration on tooth #14. Tooth structure is severely compromised with broken cusp. Requires full coverage crown restoration.'
   );
+  const [extractedEvidence, setExtractedEvidence] = useState<ExtractedEvidence | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // Step 4: Documents
   const [uploadedDocs, setUploadedDocs] = useState<Partial<ClaimDocument>[]>([]);
@@ -37,19 +46,65 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
   // Step 6: Analysis animation steps
   const [analysisStep, setAnalysisStep] = useState(0);
 
+  // Dynamic live extraction effect on narrative or document updates
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (narrative.trim().length > 3 || uploadedDocs.length > 0) {
+        setIsExtracting(true);
+        const docsForAnalysis = uploadedDocs.map(d => ({
+          file_name: d.file_name,
+          extracted_text: d.extracted_text || ''
+        }));
+        extractClinicalApi({ narrativeText: narrative, documents: docsForAnalysis })
+          .then(res => {
+            setExtractedEvidence(res);
+          })
+          .catch(err => {
+            console.warn('Clinical extraction preview error:', err);
+          })
+          .finally(() => {
+            setIsExtracting(false);
+          });
+      } else {
+        setExtractedEvidence(null);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [narrative, uploadedDocs]);
+
+  const loadSampleNote = (scenario: 'crown' | 'perio' | 'extraction') => {
+    if (scenario === 'crown') {
+      setToothNumber('14');
+      setCdtCode('D2740');
+      setNarrative('Patient presents with recurrent caries under an existing restoration on tooth #14. Tooth structure is severely compromised with broken disto-lingual cusp extending subgingivally. Requires full coverage porcelain crown.');
+    } else if (scenario === 'perio') {
+      setToothNumber('3');
+      setCdtCode('D4341');
+      setNarrative('Generalized moderate to severe chronic periodontitis. Quadrant 1 exhibits pocket depths of 5-7mm with heavy subgingival calculus and bleeding on probing. Scaling and root planing indicated for 4 or more teeth.');
+    } else if (scenario === 'extraction') {
+      setToothNumber('19');
+      setCdtCode('D7140');
+      setNarrative('Tooth #19 diagnosed as non-restorable due to severe vertical root fracture and extensive coronal breakdown to alveolar crest. Surgical extraction indicated.');
+    }
+  };
+
   useEffect(() => {
     fetchPayers().then((res) => {
       setPayers(res);
-      if (res.length > 0) setSelectedPayerId(res[0].id);
+      if (res.length > 0) {
+        setSelectedPayerId(prev => prev || res[0].id);
+      }
     });
   }, []);
 
   const handleDocumentUpload = async (file: File, documentType: string) => {
     setIsUploading(true);
     try {
-      // Create local preview doc card
+      // Store actual File reference along with metadata preview
       const tempDoc: Partial<ClaimDocument> = {
-        id: `temp-${Date.now()}`,
+        id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        file: file,
         file_name: file.name,
         document_type: documentType,
         file_size: file.size,
@@ -62,6 +117,12 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
   };
 
   const handleRunAudit = async () => {
+    if (!patientName.trim()) {
+      alert('Please enter patient full name before auditing.');
+      setStep(1);
+      return;
+    }
+
     setStep(6); // Go to animated analysis screen
 
     const auditSteps = [
@@ -80,25 +141,31 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
     }
 
     try {
+      const payerIdToUse = selectedPayerId || (payers.length > 0 ? payers[0].id : 'p-demo-delta');
+
       // 1. Create claim in backend
       const newClaim = await createClaimApi({
-        patient_id: patientId,
-        patient_name: patientName,
-        date_of_birth: dob,
-        payer_id: selectedPayerId || 'p-demo-delta',
-        date_of_service: dos,
-        claim_amount: parseFloat(claimAmount),
+        patient_id: patientId.trim() || `PT-${Math.floor(10000 + Math.random() * 90000)}`,
+        patient_name: patientName.trim(),
+        date_of_birth: dob || '1985-01-01',
+        payer_id: payerIdToUse,
+        date_of_service: dos || new Date().toISOString().split('T')[0],
+        claim_amount: parseFloat(claimAmount) || 1250,
         clinical_narrative: narrative,
         procedures: [
-          { cdt_code: cdtCode, tooth_number: toothNumber, amount: parseFloat(claimAmount) }
+          { cdt_code: cdtCode.trim() || 'D2740', tooth_number: toothNumber.trim() || '14', amount: parseFloat(claimAmount) || 1250 }
         ]
       });
 
-      // 2. Upload doc metadata if any
+      if (!newClaim || !newClaim.id) {
+        throw new Error('Failed to create claim record.');
+      }
+
+      // 2. Upload actual binary documents to backend/Supabase Storage
       for (const doc of uploadedDocs) {
-        if (doc.file_name) {
-          const fakeFile = new File(['dummy content'], doc.file_name, { type: 'application/pdf' });
-          await uploadDocumentApi(newClaim.id, fakeFile, doc.document_type || 'Clinical Notes');
+        const fileToUpload = doc.file || (doc.file_name ? new File(['claim evidence document'], doc.file_name, { type: 'application/pdf' }) : null);
+        if (fileToUpload) {
+          await uploadDocumentApi(newClaim.id, fileToUpload, doc.document_type || 'Clinical Notes');
         }
       }
 
@@ -268,11 +335,34 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
             <h3 className="text-base font-bold text-slate-900 border-b pb-3">Clinical Narrative & AI Extraction</h3>
 
             <div>
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Clinical Narrative Notes
                 </label>
-                <span className="text-xs font-mono text-slate-400">{narrative.length} characters</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 font-medium mr-1">Load Demo Case:</span>
+                  <button
+                    type="button"
+                    onClick={() => loadSampleNote('crown')}
+                    className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
+                  >
+                    Crown (#14)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadSampleNote('perio')}
+                    className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
+                  >
+                    Perio (D4341)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadSampleNote('extraction')}
+                    className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
+                  >
+                    Extraction (#19)
+                  </button>
+                </div>
               </div>
               <textarea
                 rows={5}
@@ -281,28 +371,128 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
                 placeholder="Describe the patient's clinical condition and reason for treatment..."
                 className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-800 font-sans focus:ring-2 focus:ring-brand-500 focus:outline-none leading-relaxed"
               />
+              <div className="flex justify-between items-center text-[11px] text-slate-400 mt-1">
+                <span>Natural language clinical parsing evaluates medical necessity and tooth location.</span>
+                <span className="font-mono">{narrative.length} chars</span>
+              </div>
             </div>
 
-            {/* Live AI extraction preview box */}
-            <div className="bg-slate-900 text-slate-200 p-5 rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
+            {/* Dynamic Real-time Clinical Extraction Preview */}
+            <div className="bg-slate-900 text-slate-200 p-6 rounded-3xl border border-slate-800 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider">
                   <Sparkles className="w-4 h-4 text-teal-400" />
-                  <span>AI-Assisted Evidence Preview</span>
+                  <span>Real-Time Clinical Extraction</span>
+                  {isExtracting && <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400 ml-1" />}
                 </div>
-                <span className="text-[10px] font-mono bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
-                  AI-assisted extraction
+                <span className="text-[10px] font-mono bg-slate-800 text-slate-400 px-2.5 py-0.5 rounded-full border border-slate-700">
+                  {extractedEvidence?.source || 'LIVE_NLP_ANALYZER'}
                 </span>
               </div>
 
-              <div className="text-xs space-y-1 text-slate-300">
-                <p className="font-semibold text-white">Detected Evidence Indicators:</p>
-                <ul className="list-disc list-inside space-y-0.5 text-slate-400 font-mono">
-                  <li>Teeth numbers: #{toothNumber || '14'}</li>
-                  <li>Conditions: recurrent decay, structural compromise</li>
-                  <li>Clinical justification: Confirmed (94% confidence)</li>
-                </ul>
-              </div>
+              {extractedEvidence ? (
+                <div className="space-y-3.5 text-xs">
+                  {/* Extracted Teeth */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-400 font-semibold min-w-[120px]">Target Teeth:</span>
+                    {extractedEvidence.teeth.length > 0 ? (
+                      extractedEvidence.teeth.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setToothNumber(t)}
+                          title="Click to apply tooth location to procedure"
+                          className={`font-mono font-bold px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1 ${
+                            toothNumber === t
+                              ? 'bg-brand-600 text-white shadow-md shadow-brand-500/30'
+                              : 'bg-slate-800 text-brand-300 hover:bg-slate-700 border border-slate-700'
+                          }`}
+                        >
+                          Tooth #{t} {toothNumber === t && <Check className="w-3 h-3 ml-0.5" />}
+                        </button>
+                      ))
+                    ) : (
+                      <span className="text-amber-400 font-mono text-[11px] bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/60">
+                        No tooth location specified in note
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Detected Conditions */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-400 font-semibold min-w-[120px]">Clinical Conditions:</span>
+                    {extractedEvidence.conditions.length > 0 ? (
+                      extractedEvidence.conditions.map((cond, i) => (
+                        <span
+                          key={i}
+                          className="bg-emerald-950/60 text-emerald-300 border border-emerald-700/60 px-2.5 py-1 rounded-lg font-medium text-[11px] capitalize"
+                        >
+                          {cond}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-slate-500 italic text-[11px]">No specific clinical conditions detected</span>
+                    )}
+                  </div>
+
+                  {/* Clinical Justification Status */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-400 font-semibold min-w-[120px]">Medical Justification:</span>
+                    {extractedEvidence.clinical_justification_detected ? (
+                      <span className="bg-teal-950/60 text-teal-300 border border-teal-700/60 px-2.5 py-1 rounded-lg font-semibold text-[11px] flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-teal-400" />
+                        Confirmed ({Math.round(extractedEvidence.confidence * 100)}% Confidence)
+                      </span>
+                    ) : (
+                      <span className="bg-amber-950/60 text-amber-300 border border-amber-700/60 px-2.5 py-1 rounded-lg font-semibold text-[11px] flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                        Weak or Incomplete Clinical Justification
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Candidate CDT Procedures */}
+                  {extractedEvidence.suggested_codes && extractedEvidence.suggested_codes.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800/80">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        Suggested CDT Codes from Clinical Findings:
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {extractedEvidence.suggested_codes.map((sc, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/80 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-teal-400 text-xs">{sc.code || sc.cdt_code}</span>
+                                <span className="text-[11px] font-semibold text-white truncate">{sc.description || sc.procedure_name}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{sc.rationale}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCdtCode(sc.code || sc.cdt_code)}
+                              className={`shrink-0 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all ${
+                                cdtCode === (sc.code || sc.cdt_code)
+                                  ? 'bg-emerald-600 text-white border-emerald-500'
+                                  : 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600'
+                              }`}
+                            >
+                              {cdtCode === (sc.code || sc.cdt_code) ? 'Selected' : 'Use Code'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-slate-500 text-xs space-y-1">
+                  <p>Type doctor's clinical notes above or load a sample scenario to extract clinical evidence.</p>
+                  <p className="text-[10px] text-slate-600">The extraction engine parses tooth numbering, diagnostic conditions, and CDT codes.</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -425,3 +615,5 @@ export const NewAudit: React.FC<NewAuditProps> = ({ onAuditComplete }) => {
     </div>
   );
 };
+
+export default NewAudit;

@@ -1,6 +1,8 @@
 /**
  * Audit Engine Service
- * Orchestrates pre-submission audit execution for a dental claim.
+ * Orchestrates pre-submission audit execution for ALL dental procedures on a claim.
+ * Implements multi-procedure evaluation, clinical NLP evidence cross-referencing,
+ * highest-risk-first prioritization, and empirical historical signals.
  */
 
 const db = require('../config/supabase');
@@ -10,6 +12,8 @@ const { verifyRequiredDocuments } = require('./fileVerifier');
 const { inspectClinicalText } = require('./textInspector');
 const { checkEvidenceConsistency } = require('./consistencyChecker');
 const { calculateReadinessScore } = require('./scoreCalculator');
+const { calculateProcedureRiskPriority, sortProceduresByRisk } = require('./riskPrioritizer');
+const { getHistoricalClaimSignal } = require('./historicalSignal');
 
 async function runClaimAudit(claimId) {
   const claim = await db.getClaimById(claimId);
@@ -17,85 +21,159 @@ async function runClaimAudit(claimId) {
     throw new Error(`Claim not found: ${claimId}`);
   }
 
-  const primaryProc = (claim.procedures && claim.procedures.length > 0)
-    ? claim.procedures[0]
-    : { cdt_code: 'D2740', tooth_number: '14' };
+  // 1. Resolve Claim Procedures (Audit ALL procedures, not just the first)
+  const procedures = (claim.procedures && claim.procedures.length > 0)
+    ? claim.procedures
+    : [{ id: 'default-proc-1', cdt_code: 'D2740', tooth_number: '14', description: 'Crown - Porcelain/Ceramic Substrate' }];
 
-  // 1. Load Payer Rules
-  const payerRules = await getPayerRulesForProcedure(claim.payer_id, primaryProc.cdt_code);
-
-  // 2. Extract Clinical Evidence (AI / NLP)
-  const extractedEvidence = await extractClinicalEvidence(claim.clinical_narrative, claim.documents || []);
-
-  // 3. Initial Procedure & Tooth Checks
-  const baseChecks = [
-    {
-      type: 'PROCEDURE',
-      status: 'PASSED',
-      title: `CDT Procedure ${primaryProc.cdt_code} Identified`,
-      message: `Verified procedure ${primaryProc.cdt_code} (${primaryProc.description || 'Porcelain Crown'}).`
-    },
-    {
-      type: 'TOOTH',
-      status: primaryProc.tooth_number ? 'PASSED' : 'FAILED',
-      title: primaryProc.tooth_number ? `Tooth #${primaryProc.tooth_number} Specified` : 'Tooth Number Missing',
-      message: primaryProc.tooth_number ? `Location assigned to Tooth #${primaryProc.tooth_number}.` : 'Claim is missing target tooth location.'
-    }
-  ];
-
-  // 4. File Verification
-  const fileResult = verifyRequiredDocuments(payerRules, claim.documents || [], claim.clinical_narrative);
-
-  // 5. Text Inspection
-  const textResult = inspectClinicalText(payerRules, claim.clinical_narrative, extractedEvidence);
-
-  // 6. Evidence Consistency Check
-  const consistencyResult = checkEvidenceConsistency(
-    primaryProc.tooth_number,
-    extractedEvidence.teeth,
+  // 2. Extract Clinical Evidence via Clinical NLP / Hybrid Normalizer
+  const extractedEvidence = await extractClinicalEvidence(
+    claim.clinical_narrative,
     claim.documents || []
   );
 
-  // Combine checks & findings
-  const allChecks = [
-    ...baseChecks,
-    ...fileResult.checks,
-    ...textResult.checks,
-    ...consistencyResult.checks
-  ];
+  const procedureAudits = [];
+  const aggregatedChecks = [];
+  const aggregatedFindings = [];
 
-  const allFindings = [
-    ...fileResult.findings,
-    ...textResult.findings,
-    ...consistencyResult.findings
-  ];
+  // 3. Evaluate Every Procedure Independently
+  for (const proc of procedures) {
+    const cdtCode = (proc.cdt_code || 'D2740').toUpperCase();
+    const toothNum = proc.tooth_number ? proc.tooth_number.toString() : '';
 
-  // 7. Calculate Readiness Score
-  const scoreResult = calculateReadinessScore(allChecks, allFindings);
+    // a. Query Payer Rules for this procedure
+    const payerRules = await getPayerRulesForProcedure(claim.payer_id, cdtCode);
 
-  const passedCount = allChecks.filter(c => c.status === 'PASSED').length;
-  const warningCount = allChecks.filter(c => c.status === 'WARNING').length;
-  const failedCount = allChecks.filter(c => c.status === 'FAILED').length;
+    // b. Base Procedure & Tooth Location Checks
+    const procBaseChecks = [
+      {
+        type: 'PROCEDURE',
+        status: 'PASSED',
+        title: `CDT ${cdtCode} Identified`,
+        message: `Verified procedure ${cdtCode} (${proc.description || 'Restorative Intervention'}).`
+      },
+      {
+        type: 'TOOTH',
+        status: toothNum ? 'PASSED' : (cdtCode === 'D4341' || cdtCode === 'D1110' ? 'PASSED' : 'FAILED'),
+        title: toothNum ? `Tooth #${toothNum} Specified` : (cdtCode === 'D4341' ? 'Quadrant Procedure' : 'Tooth Location Missing'),
+        message: toothNum
+          ? `Tooth location assigned to Tooth #${toothNum}.`
+          : (cdtCode === 'D4341' ? 'Quadrant procedure location.' : `Procedure ${cdtCode} requires target tooth location.`)
+      }
+    ];
+
+    // c. Document Attachment Verification for this CDT
+    const fileResult = verifyRequiredDocuments(payerRules, claim.documents || [], claim.clinical_narrative, cdtCode);
+
+    // d. Clinical Narrative & Justification Inspection
+    const textResult = inspectClinicalText(payerRules, claim.clinical_narrative, extractedEvidence);
+
+    // e. Tooth Consistency Check across chart, claim, and images
+    const consistencyResult = checkEvidenceConsistency(
+      toothNum,
+      extractedEvidence.teeth,
+      claim.documents || []
+    );
+
+    // Combine checks & findings for this procedure
+    const procChecks = [
+      ...procBaseChecks,
+      ...fileResult.checks,
+      ...textResult.checks,
+      ...consistencyResult.checks
+    ];
+
+    const procFindings = [
+      ...fileResult.findings,
+      ...textResult.findings,
+      ...consistencyResult.findings
+    ].map(f => ({
+      ...f,
+      procedure_id: proc.id,
+      cdt_code: cdtCode,
+      tooth_number: toothNum
+    }));
+
+    // f. Historical Claim Outcome Signal for Payer + CDT
+    const historicalSignal = await getHistoricalClaimSignal(
+      claim.payer_id,
+      cdtCode,
+      procFindings.map(f => f.finding_type)
+    );
+
+    // g. Highest-Risk-First Prioritization for this procedure
+    const riskAssessment = calculateProcedureRiskPriority(
+      proc,
+      procChecks,
+      procFindings,
+      historicalSignal,
+      claim.payer?.display_name || 'Selected Payer'
+    );
+
+    procedureAudits.push({
+      procedure_id: proc.id,
+      cdt_code: cdtCode,
+      tooth_number: toothNum,
+      description: proc.description || '',
+      amount: proc.amount || 0,
+      priority: riskAssessment.priority,
+      risk_score: riskAssessment.risk_score,
+      explanation: riskAssessment.explanation,
+      risk_factors: riskAssessment.risk_factors,
+      historical_signal: historicalSignal,
+      checks: procChecks,
+      findings: procFindings,
+      evidence_map: consistencyResult.evidenceMap
+    });
+
+    procChecks.forEach(c => aggregatedChecks.push(c));
+    procFindings.forEach(f => aggregatedFindings.push(f));
+  }
+
+  // 4. Sort Procedures Highest-Risk First
+  const sortedProcedureAudits = sortProceduresByRisk(procedureAudits);
+
+  // 5. Calculate Overall Readiness Score & Status
+  const scoreResult = calculateReadinessScore(aggregatedChecks, aggregatedFindings);
+
+  const highestPriority = sortedProcedureAudits[0]?.priority || 'LOW';
+  let overallStatus = scoreResult.status;
+  if (highestPriority === 'HIGH') {
+    overallStatus = 'BLOCKED';
+  } else if (highestPriority === 'MEDIUM' && overallStatus === 'READY') {
+    overallStatus = 'REVIEW';
+  }
+
+  const passedCount = aggregatedChecks.filter(c => c.status === 'PASSED').length;
+  const warningCount = aggregatedChecks.filter(c => c.status === 'WARNING').length;
+  const failedCount = aggregatedChecks.filter(c => c.status === 'FAILED').length;
 
   const auditPayload = {
     claim_id: claim.id,
     readiness_score: scoreResult.readiness_score,
-    status: scoreResult.status,
+    status: overallStatus,
+    risk_priority: highestPriority,
     risk_breakdown: scoreResult.riskBreakdown,
     summary: {
-      total_checks: allChecks.length,
+      total_procedures: procedureAudits.length,
+      high_risk_procedures: procedureAudits.filter(p => p.priority === 'HIGH').length,
+      medium_risk_procedures: procedureAudits.filter(p => p.priority === 'MEDIUM').length,
+      low_risk_procedures: procedureAudits.filter(p => p.priority === 'LOW').length,
+      total_checks: aggregatedChecks.length,
       passed: passedCount,
       warnings: warningCount,
       failed: failedCount
     },
-    checks: allChecks,
-    findings: allFindings,
-    evidence_map: consistencyResult.evidenceMap,
+    procedure_audits: sortedProcedureAudits,
+    candidate_cdt_suggestions: extractedEvidence.suggested_codes || [],
+    checks: aggregatedChecks,
+    findings: aggregatedFindings,
+    evidence_map: sortedProcedureAudits[0]?.evidence_map || [],
     extracted_evidence: extractedEvidence
   };
 
-  // 8. Save Audit Result & Findings to Database
-  const saved = await db.saveAuditResult(auditPayload, allFindings);
+  // 6. Save Audit Result & Findings to Supabase
+  const saved = await db.saveAuditResult(auditPayload, aggregatedFindings);
 
   return {
     ...auditPayload,
