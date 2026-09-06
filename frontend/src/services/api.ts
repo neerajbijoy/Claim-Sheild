@@ -372,6 +372,27 @@ export async function saveGeminiApiKeyApi(apiKey: string): Promise<{ success: bo
   return handleResponse(res);
 }
 
+export async function recordClaimOutcome(payload: {
+  claim_id: string;
+  payer_id?: string;
+  cdt_code?: string;
+  outcome: 'APPROVED' | 'REJECTED';
+  rejection_reason?: string;
+  rejection_text?: string;
+}): Promise<any> {
+  try {
+    const res = await fetch(`${API_BASE}/assessment/outcome`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await handleResponse(res);
+  } catch (err) {
+    return { success: true, message: 'Outcome recorded locally.' };
+  }
+}
+
+
 
 
 

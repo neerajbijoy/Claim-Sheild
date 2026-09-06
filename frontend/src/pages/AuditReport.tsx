@@ -336,26 +336,25 @@ export const AuditReport: React.FC<AuditReportProps> = ({
               proc.priority === 'HIGH'
                 ? 'border-rose-400 bg-rose-50 text-rose-900'
                 : proc.priority === 'MEDIUM'
-                ? 'border-amber-400 bg-amber-50 text-amber-900'
-                : 'border-emerald-400 bg-emerald-50 text-emerald-900';
+                  ? 'border-amber-400 bg-amber-50 text-amber-900'
+                  : 'border-emerald-400 bg-emerald-50 text-emerald-900';
 
             const badgeBg =
               proc.priority === 'HIGH'
                 ? 'bg-rose-600 text-white'
                 : proc.priority === 'MEDIUM'
-                ? 'bg-amber-600 text-white'
-                : 'bg-emerald-600 text-white';
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-emerald-600 text-white';
 
             return (
               <button
                 key={idx}
                 type="button"
                 onClick={() => setSelectedProcedureIdx(idx)}
-                className={`p-3.5 rounded-2xl border text-left transition-all flex items-center gap-3 ${
-                  isSelected
+                className={`p-3.5 rounded-2xl border text-left transition-all flex items-center gap-3 ${isSelected
                     ? `${priorityColor} ring-2 ring-brand-500 shadow-md`
                     : 'border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-slate-700'
-                }`}
+                  }`}
               >
                 <div>
                   <div className="flex items-center gap-2">
@@ -393,13 +392,12 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                   {activeProcedure.cdt_code} {activeProcedure.tooth_number ? `(Tooth #${activeProcedure.tooth_number})` : ''}
                 </span>
               </div>
-              <span className={`px-2.5 py-0.5 rounded-md text-xs font-extrabold font-mono uppercase ${
-                activeProcedure.priority === 'HIGH'
+              <span className={`px-2.5 py-0.5 rounded-md text-xs font-extrabold font-mono uppercase ${activeProcedure.priority === 'HIGH'
                   ? 'bg-rose-100 text-rose-800 border border-rose-200'
                   : activeProcedure.priority === 'MEDIUM'
-                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-              }`}>
+                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                }`}>
                 Audit Priority: {activeProcedure.priority}
               </span>
             </div>
@@ -553,13 +551,12 @@ export const AuditReport: React.FC<AuditReportProps> = ({
               </div>
             </div>
 
-            <span className={`px-3 py-1 rounded-full text-xs font-mono font-extrabold ${
-              historicalSignal.historical_signal === 'HIGH'
+            <span className={`px-3 py-1 rounded-full text-xs font-mono font-extrabold ${historicalSignal.historical_signal === 'HIGH'
                 ? 'bg-rose-100 text-rose-800 border border-rose-200'
                 : historicalSignal.historical_signal === 'MEDIUM'
-                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-            }`}>
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}>
               Historical Scrutiny: {historicalSignal.historical_signal}
             </span>
           </div>
@@ -629,10 +626,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
             </div>
           </div>
 
-          <div className="bg-blue-600 text-white px-4 py-2 rounded-2xl text-center shadow-md shrink-0">
-            <span className="text-xl font-black block leading-none">76%</span>
-            <span className="text-[9px] font-bold uppercase tracking-wider block opacity-90 mt-1">REJECTION RISK</span>
-          </div>
+
         </div>
 
         {/* Content Body */}

@@ -13,7 +13,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     { id: 'claims', label: 'Claims', icon: FileSpreadsheet },
     { id: 'new-audit', label: 'New Audit', icon: PlusCircle },
     { id: 'history', label: 'Audit History', icon: History },
-    { id: 'payer-rules', label: 'Payer Rules', icon: ScrollText },
+    { id: 'payer-rules', label: 'Claim Response', icon: ScrollText },
     { id: 'cdt-library', label: 'CDT Library', icon: BookOpenCheck },
   ];
 
@@ -48,11 +48,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition-all ${
-                  isActive
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition-all ${isActive
                     ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30 font-bold'
                     : 'hover:bg-slate-800/80 text-slate-400 hover:text-white'
-                } ${item.highlight && !isActive ? 'border border-brand-500/30 text-brand-400 hover:bg-brand-600/10' : ''}`}
+                  } ${item.highlight && !isActive ? 'border border-brand-500/30 text-brand-400 hover:bg-brand-600/10' : ''}`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-white' : (item.highlight ? 'text-brand-400' : 'text-slate-400')}`} />
                 <span>{item.label}</span>

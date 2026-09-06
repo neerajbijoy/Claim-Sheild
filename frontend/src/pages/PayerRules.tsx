@@ -1,127 +1,139 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollText, ShieldAlert, Sparkles, CheckCircle2, XCircle } from 'lucide-react';
-import { PayerRule, Payer } from '../types';
-import { fetchPayers, fetchPayerRules } from '../services/api';
+import { AlertCircle, CheckCircle2, ClipboardCheck, Send } from 'lucide-react';
+import { Claim } from '../types';
+import { fetchClaims, recordClaimOutcome } from '../services/api';
 
-export const PayerRules: React.FC = () => {
-  const [payers, setPayers] = useState<Payer[]>([]);
-  const [selectedPayer, setSelectedPayer] = useState<string>('');
-  const [rules, setRules] = useState<PayerRule[]>([]);
+export const Settings: React.FC = () => {
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [selectedClaimId, setSelectedClaimId] = useState('');
+  const [outcome, setOutcome] = useState<'APPROVED' | 'REJECTED'>('APPROVED');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectionText, setRejectionText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPayers().then((pList) => {
-      setPayers(pList);
-      if (pList.length > 0) {
-        setSelectedPayer(pList[0].id);
-        loadRules(pList[0].id);
-      }
-    });
+    fetchClaims()
+      .then((data) => {
+        setClaims(data);
+        if (data.length > 0) setSelectedClaimId(data[0].id);
+      })
+      .catch(() => setError('Unable to load claims from the database.'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const loadRules = async (payerId: string) => {
-    setLoading(true);
+  const selectedClaim = claims.find(claim => claim.id === selectedClaimId);
+  const procedure = selectedClaim?.procedures?.[0];
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedClaim || !procedure) {
+      setError('Select a claim with a procedure before recording an outcome.');
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage(null);
+    setError(null);
+
+    if (outcome === 'REJECTED' && !rejectionReason.trim() && !rejectionText.trim()) {
+      setError('Add the denial reason or paste the payer response before saving.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      const data = await fetchPayerRules(payerId);
-      setRules(data);
-    } catch (err) {
-      console.error('Error fetching payer rules:', err);
+      await recordClaimOutcome({
+        claim_id: selectedClaim.id,
+        payer_id: selectedClaim.payer_id,
+        cdt_code: procedure.cdt_code,
+        outcome,
+        rejection_reason: outcome === 'REJECTED' ? rejectionReason : undefined,
+        rejection_text: outcome === 'REJECTED' ? rejectionText : undefined
+      });
+      setMessage(`Actual ${outcome.toLowerCase()} response recorded for ${selectedClaim.claim_number}.`);
+      setRejectionReason('');
+      setRejectionText('');
+    } catch {
+      setError('The claim outcome could not be recorded.');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const handlePayerChange = (id: string) => {
-    setSelectedPayer(id);
-    loadRules(id);
-  };
-
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Payer Rules Engine</h2>
-          <p className="text-xs text-slate-500">Configured rule sets evaluated during pre-submission audits</p>
-        </div>
-
-        {/* Payer Selector */}
-        <select
-          value={selectedPayer}
-          onChange={(e) => handlePayerChange(e.target.value)}
-          className="bg-white border border-slate-300 text-xs font-bold text-slate-800 px-4 py-2.5 rounded-xl shadow-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"
-        >
-          {payers.map(p => (
-            <option key={p.id} value={p.id}>{p.display_name} ({p.name})</option>
-          ))}
-        </select>
+    <div className="p-8 max-w-5xl mx-auto space-y-8">
+      <div>
+        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Record Claim Outcome</h2>
+        <p className="text-xs text-slate-500">Capture the payer's actual adjudication so future rejection predictions can learn from it.</p>
       </div>
 
-      {/* Synthetic Disclaimer Banner */}
-      <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 text-amber-900 text-xs shadow-sm">
-        <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
-        <div>
-          <span className="font-extrabold block uppercase tracking-wide">Synthetic Demonstration Rules</span>
-          <p className="text-amber-800">
-            Rules shown below are synthetic demonstration rules configured for testing and hackathon evaluation. They do not represent official payer requirements.
-          </p>
-        </div>
-      </div>
-
-      {/* Rules Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="py-12 text-center text-xs text-slate-400">Loading payer rules...</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase tracking-wider font-semibold text-[10px]">
-                <tr>
-                  <th className="py-3.5 px-4">Payer</th>
-                  <th className="py-3.5 px-4">CDT Code</th>
-                  <th className="py-3.5 px-4">Requirement</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4">Effective Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {rules.map((rule) => {
-                  const payerObj = payers.find(p => p.id === selectedPayer);
-                  const isRequired = rule.required !== undefined ? rule.required : !!rule.is_required;
-                  const effectiveDate = rule.effective_from || rule.effective_date || '2026-01-01';
-
-                  return (
-                    <tr key={rule.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-4 px-4 font-semibold text-slate-900">
-                        {payerObj ? payerObj.display_name : 'Demo Dental Insurance'}
-                      </td>
-                      <td className="py-4 px-4 font-mono font-bold text-brand-600">{rule.cdt_code}</td>
-                      <td className="py-4 px-4">
-                        <span className="font-mono text-slate-800 font-semibold">{rule.requirement_type}</span>
-                        {rule.requirement_description && (
-                          <p className="text-[11px] text-slate-400 font-normal mt-0.5">{rule.requirement_description}</p>
-                        )}
-                      </td>
-                      <td className="py-4 px-4">
-                        {isRequired ? (
-                          <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono">
-                            <XCircle className="w-3 h-3 text-red-600" /> Required
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono">
-                            <CheckCircle2 className="w-3 h-3 text-slate-400" /> Optional
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 font-mono text-slate-500">{effectiveDate}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 space-y-6">
+        <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+          <div className="p-2.5 rounded-2xl bg-brand-50 text-brand-600">
+            <ClipboardCheck className="w-5 h-5" />
           </div>
+          <div>
+            <h3 className="font-bold text-slate-900">Payer adjudication feedback</h3>
+            <p className="text-xs text-slate-500">Record what actually happened after submission.</p>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="text-xs text-slate-400">Loading claims...</p>
+        ) : (
+          <>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Claim</label>
+              <select value={selectedClaimId} onChange={event => setSelectedClaimId(event.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                {claims.map(claim => (
+                  <option key={claim.id} value={claim.id}>{claim.claim_number} - {claim.patient_name}</option>
+                ))}
+              </select>
+              {selectedClaim && procedure && (
+                <p className="text-xs text-slate-400 mt-2">Payer: {selectedClaim.payer_id} · CDT {procedure.cdt_code} · Tooth #{procedure.tooth_number}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Actual response</label>
+              <div className="grid grid-cols-2 gap-3">
+                {(['APPROVED', 'REJECTED'] as const).map(value => (
+                  <button key={value} type="button" onClick={() => setOutcome(value)} className={`px-4 py-3 rounded-2xl border text-sm font-bold transition-colors ${outcome === value ? (value === 'APPROVED' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-red-600 text-white border-red-600') : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {outcome === 'REJECTED' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Rejection reason</label>
+                  <input value={rejectionReason} onChange={event => setRejectionReason(event.target.value)} placeholder="Example: Missing X-ray" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800 focus:ring-2 focus:ring-brand-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Payer response</label>
+                  <textarea value={rejectionText} onChange={event => setRejectionText(event.target.value)} rows={4} placeholder="Paste the payer's rejection message or explanation." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800 focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none" />
+                </div>
+              </div>
+            )}
+
+            {message && <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"><CheckCircle2 className="w-4 h-4" />{message}</div>}
+            {error && <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold"><AlertCircle className="w-4 h-4" />{error}</div>}
+
+            <button type="submit" disabled={submitting || !selectedClaim} className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Send className="w-4 h-4" />
+              {submitting ? 'Recording...' : 'Record actual response'}
+            </button>
+          </>
         )}
-      </div>
+      </form>
     </div>
   );
 };
+
+export const PayerRules = Settings;
+export default Settings;
