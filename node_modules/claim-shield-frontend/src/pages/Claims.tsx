@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Filter, Plus, ArrowUpRight, RefreshCw } from 'lucide-react';
+import { Search, Filter, Plus, ArrowUpRight, RefreshCw, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Claim, Payer } from '../types';
-import { fetchClaims, fetchPayers } from '../services/api';
+import { fetchClaims, fetchPayers, deleteClaimApi } from '../services/api';
 
 interface ClaimsProps {
   onSelectClaim: (claimId: string) => void;
@@ -12,14 +12,26 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
   const [claims, setClaims] = useState<Claim[]>([]);
   const [payers, setPayers] = useState<Payer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Filter & Search states
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [payerFilter, setPayerFilter] = useState('');
 
+  // Toast notification feedback state
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
   useEffect(() => {
     loadData();
   }, [statusFilter, payerFilter]);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const loadData = async () => {
     setLoading(true);
@@ -30,8 +42,9 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
       ]);
       setClaims(claimData);
       setPayers(payerData);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching claims:', err);
+      setToast({ type: 'error', message: err.message || 'Failed to fetch claims.' });
     } finally {
       setLoading(false);
     }
@@ -42,12 +55,55 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
     loadData();
   };
 
+  const handleDeleteClaim = async (e: React.MouseEvent, claimId: string, claimNumber: string) => {
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete claim ${claimNumber}? This will remove it from the Supabase database.`)) {
+      return;
+    }
+
+    setDeletingId(claimId);
+    try {
+      await deleteClaimApi(claimId);
+      // Instant UI state update without page reload
+      setClaims(prev => prev.filter(c => c.id !== claimId && c.claim_number !== claimId));
+      setToast({ type: 'success', message: `Claim ${claimNumber} deleted successfully from database.` });
+    } catch (err: any) {
+      console.error('Error deleting claim:', err);
+      setToast({ type: 'error', message: `Failed to delete claim: ${err.message}` });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
+      {/* Toast Notification Banner */}
+      {toast && (
+        <div
+          className={`p-4 rounded-2xl border text-xs font-semibold flex items-center justify-between shadow-lg transition-all animate-in fade-in slide-in-from-top-4 ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-red-50 text-red-800 border-red-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-600" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600">
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Claims Management</h2>
-          <p className="text-xs text-slate-500">Filter, search, and review pre-submission audit statuses</p>
+          <p className="text-xs text-slate-500">Filter, search, inspect, and delete pre-submission audit records in Supabase</p>
         </div>
 
         <button
@@ -102,6 +158,7 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
 
           <button
             onClick={loadData}
+            title="Refresh from Database"
             className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -112,11 +169,19 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
       {/* Claims List Table */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-xs text-slate-400">Loading claims data...</div>
+          <div className="py-16 text-center text-xs text-slate-400">Loading claims from Supabase database...</div>
         ) : claims.length === 0 ? (
-          <div className="py-16 text-center text-xs text-slate-500 space-y-2">
-            <p className="font-semibold text-slate-700 text-sm">No claims match criteria.</p>
-            <p>Try resetting filters or start a new claim audit.</p>
+          <div className="py-16 text-center text-xs text-slate-500 space-y-3">
+            <p className="font-bold text-slate-800 text-sm">No claims in database yet</p>
+            <p className="text-slate-500 max-w-sm mx-auto">
+              Create and run a new pre-submission audit to populate claims into your live Supabase database.
+            </p>
+            <button
+              onClick={onNewAudit}
+              className="mt-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-brand-600/30 inline-flex items-center gap-1.5 transition-all"
+            >
+              <Plus className="w-4 h-4" /> START FIRST AUDIT
+            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -131,7 +196,7 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
                   <th className="py-3.5 px-4">Readiness</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4">Last Audited</th>
-                  <th className="py-3.5 px-4 text-right">Action</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
@@ -158,6 +223,8 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
                     );
                   }
 
+                  const isDeleting = deletingId === c.id;
+
                   return (
                     <tr
                       key={c.id}
@@ -178,9 +245,23 @@ export const Claims: React.FC<ClaimsProps> = ({ onSelectClaim, onNewAudit }) => 
                         {new Date(c.updated_at || c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </td>
                       <td className="py-4 px-4 text-right">
-                        <button className="text-brand-600 hover:text-brand-800 font-semibold text-xs inline-flex items-center gap-1">
-                          Open <ArrowUpRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => onSelectClaim(c.id)}
+                            className="text-brand-600 hover:text-brand-800 font-semibold text-xs inline-flex items-center gap-1 p-1 hover:bg-brand-50 rounded-lg transition-colors"
+                            title="Open Audit Report"
+                          >
+                            Open <ArrowUpRight className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClaim(e, c.id, c.claim_number)}
+                            disabled={isDeleting}
+                            className="text-slate-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete Claim"
+                          >
+                            <Trash2 className={`w-3.5 h-3.5 ${isDeleting ? 'animate-spin' : ''}`} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

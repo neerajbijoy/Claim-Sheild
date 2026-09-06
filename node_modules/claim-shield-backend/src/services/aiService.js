@@ -1,102 +1,117 @@
 /**
- * AI Service for Clinical Narrative & Evidence Extraction
- * Uses Gemini API if configured or deterministic regex/NLP parser fallback.
+ * AI Service for Clinical Evidence Extraction
+ * Integrates Hugging Face d4data/biomedical-ner-all local microservice (port 8001)
+ * with the Dental Normalization Layer, CDT Knowledge Base, and a graceful
+ * deterministic fallback engine.
  */
 
-const { GoogleGenAI } = (() => {
-  try {
-    return require('@google/genai');
-  } catch (e) {
-    return {};
-  }
-})();
+const { normalizeDentalEntities } = require('./dentalNormalizer');
+const { identifyCdtCandidates } = require('./cdtKnowledgeBase');
 
-async function extractClinicalEvidence(narrativeText, documents = []) {
+const NLP_SERVICE_URL = process.env.NLP_SERVICE_URL || 'http://127.0.0.1:8001/extract';
+
+async function extractClinicalEvidence(narrativeText = '', documents = []) {
   const combinedText = [
     narrativeText || '',
-    ...documents.map(d => d.extracted_text || d.file_name || '')
-  ].join('\n');
+    ...documents.map(d => {
+      if (typeof d === 'string') return d;
+      return d.extracted_text || d.file_name || '';
+    })
+  ].filter(Boolean).join('\n').trim();
 
-  // Check if GEMINI_API_KEY is configured
-  if (process.env.GEMINI_API_KEY && GoogleGenAI) {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `Analyze the following clinical narrative and dental documents text.
-Return a valid JSON object with EXACTLY this structure:
-{
-  "teeth": ["string tooth numbers found, e.g. '14'"],
-  "conditions": ["string clinical conditions found, e.g. 'recurrent decay', 'structural compromise'"],
-  "clinical_justification_detected": true/false,
-  "confidence": 0.0 to 1.0 score
-}
-
-Text:
-"${combinedText}"`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt
-      });
-
-      if (response && response.text) {
-        const cleaned = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-        return {
-          ...parsed,
-          source: 'AI_EXTRACTED'
-        };
-      }
-    } catch (err) {
-      console.warn('[AI Service] Gemini API extraction failed, using deterministic fallback:', err.message);
-    }
+  if (!combinedText) {
+    return {
+      teeth: [],
+      conditions: [],
+      structural_findings: [],
+      treatment_context: [],
+      anatomical_sites: [],
+      severity: [],
+      clinical_justification_detected: false,
+      confidence: 0.0,
+      raw_entities: [],
+      suggested_codes: [],
+      source: 'NOT_DETECTED',
+      model: 'None'
+    };
   }
 
-  // Deterministic Fallback Parser
+  // 1. Attempt Clinical NLP Entity Extraction via local Hugging Face microservice
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const response = await fetch(NLP_SERVICE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: combinedText }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.success && Array.isArray(data.entities)) {
+        // Pass entities to Dental Normalization Layer
+        const normalized = normalizeDentalEntities(data.entities, combinedText);
+        const suggestedCodes = identifyCdtCandidates(normalized, combinedText);
+
+        const avgConfidence = data.entities.length > 0
+          ? data.entities.reduce((acc, e) => acc + (e.confidence || 0.9), 0) / data.entities.length
+          : (normalized.has_clinical_justification ? 0.94 : 0.40);
+
+        return {
+          tooth: normalized.tooth,
+          teeth: normalized.teeth,
+          conditions: normalized.findings,
+          findings: normalized.findings,
+          structural_findings: normalized.structural_findings,
+          treatment_context: normalized.treatment_context,
+          anatomical_sites: normalized.anatomical_sites,
+          severity: normalized.severity,
+          clinical_justification_detected: normalized.has_clinical_justification,
+          confidence: Math.round(avgConfidence * 100) / 100,
+          raw_entities: data.entities,
+          suggested_codes: suggestedCodes,
+          source: 'HUGGINGFACE_NLP (d4data/biomedical-ner-all)',
+          model: data.model || 'd4data/biomedical-ner-all'
+        };
+      }
+    }
+  } catch (err) {
+    // Expected when service is starting or running in lightweight standalone mode
+    // Fall through to deterministic terminology layer
+    console.info(`[AI Service] NLP service at ${NLP_SERVICE_URL} unavailable (${err.message}). Using deterministic clinical terminology fallback.`);
+  }
+
+  // 2. Deterministic Terminology Fallback Parser
   return parseNarrativeDeterministic(combinedText);
 }
 
 function parseNarrativeDeterministic(text) {
-  const normalized = text.toLowerCase();
-
-  // Extract tooth numbers: #14, tooth 14, tooth #14, teeth 13, 14, 15
-  const teethMatches = new Set();
-  const toothRegex = /(?:tooth|teeth|#)\s*#?\s*([0-3]?[0-9])/gi;
-  let match;
-  while ((match = toothRegex.exec(text)) !== null) {
-    const num = parseInt(match[1], 10);
-    if (num >= 1 && num <= 32) {
-      teethMatches.add(num.toString());
-    }
-  }
-
-  // Conditions detection
-  const conditions = [];
-  const conditionPatterns = [
-    { pattern: /recurrent decay/i, label: 'recurrent decay' },
-    { pattern: /structural(?:ly)? compromise/i, label: 'structural compromise' },
-    { pattern: /cusp(?:al)? fracture|broken cusp/i, label: 'cusp fracture' },
-    { pattern: /extensive breakdown|decay under/i, label: 'extensive breakdown' },
-    { pattern: /periapical radiolucency|abscess/i, label: 'periapical radiolucency' },
-    { pattern: /loss of retention|failing crown/i, label: 'failing restoration' }
-  ];
-
-  conditionPatterns.forEach(cp => {
-    if (cp.pattern.test(text)) {
-      conditions.push(cp.label);
-    }
-  });
-
-  const justificationDetected = conditions.length > 0 || normalized.includes('full coverage') || normalized.includes('crown');
+  const normalized = normalizeDentalEntities([], text);
+  const suggestedCodes = identifyCdtCandidates(normalized, text);
 
   return {
-    teeth: Array.from(teethMatches),
-    conditions,
-    clinical_justification_detected: justificationDetected,
-    confidence: justificationDetected ? 0.94 : 0.45,
-    source: 'DETERMINISTIC_EXTRACTION'
+    tooth: normalized.tooth,
+    teeth: normalized.teeth,
+    conditions: normalized.findings,
+    findings: normalized.findings,
+    structural_findings: normalized.structural_findings,
+    treatment_context: normalized.treatment_context,
+    anatomical_sites: normalized.anatomical_sites,
+    severity: normalized.severity,
+    clinical_justification_detected: normalized.has_clinical_justification,
+    confidence: normalized.has_clinical_justification ? 0.92 : 0.40,
+    raw_entities: [],
+    suggested_codes: suggestedCodes,
+    source: 'DETERMINISTIC_TERMINOLOGY_FALLBACK',
+    model: 'Dental Terminology Rule Engine'
   };
 }
 
 module.exports = {
-  extractClinicalEvidence
+  extractClinicalEvidence,
+  parseNarrativeDeterministic
 };

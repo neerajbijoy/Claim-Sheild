@@ -100,7 +100,7 @@ export const FixModal: React.FC<FixModalProps> = ({
           <div className="p-3 bg-brand-50 rounded-2xl border border-brand-200 flex items-start gap-2.5 text-xs text-brand-900">
             <CheckCircle2 className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
             <p>
-              Submitting updates will run <span className="font-bold">POST /api/claims/:id/re-audit</span> on the backend and recalculate readiness score in real-time.
+              Submitting updates will re-verify claim documentation against CDT library rules in real time.
             </p>
           </div>
 

@@ -389,8 +389,6 @@ export const NewAudit: React.FC<NewAuditProps> = ({
     /*
      * If payer-specific rules exist,
      * use them.
-     *
-     * Otherwise show sensible defaults.
      */
     if (rules.length > 0) {
       return rules.map(
@@ -420,40 +418,70 @@ export const NewAudit: React.FC<NewAuditProps> = ({
       );
     }
 
-    return [
+    // Dynamic Procedure-Specific Requirements based on selected CDT Code
+    const code = (cdtCode || 'D2740').toUpperCase();
+
+    const requirements: Requirement[] = [
       {
         id: 'clinical-notes',
         type: 'CLINICAL_NARRATIVE',
         label: 'Clinical Notes',
         description:
-          'Doctor documentation describing diagnosis, clinical findings and medical necessity.',
-        documentType:
-          'Clinical Notes',
+          'Doctor documentation describing diagnosis, clinical findings, remaining tooth structure, and medical necessity.',
+        documentType: 'Clinical Notes',
         required: true
       },
-
       {
         id: 'xray',
         type: 'XRAY',
         label: 'X-Ray / Radiograph',
         description:
-          'Radiograph supporting the diagnosis and procedure.',
-        documentType:
-          'X-Ray / Radiograph',
+          'Diagnostic pre-operative radiograph demonstrating treated tooth, bone levels, or decay depth.',
+        documentType: 'X-Ray / Radiograph',
         required: true
-      },
+      }
+    ];
 
-      {
+    // Periodontal Procedures (D4341, D4342, D4910, D4260) require Periodontal Charting
+    if (code.startsWith('D4') || code === 'D4341' || code === 'D4342') {
+      requirements.push({
+        id: 'periodontal-chart',
+        type: 'PERIODONTAL_CHART',
+        label: 'Periodontal Chart',
+        description:
+          '6-point periodontal probe depth chart with documented pocket depths >= 4mm.',
+        documentType: 'Periodontal Chart',
+        required: true
+      });
+    }
+
+    // Restorative Crowns (D2740, D2750) or Implants recommend Intraoral Photos
+    if (code.startsWith('D27') || code.startsWith('D60') || code.startsWith('D62')) {
+      requirements.push({
+        id: 'intraoral-photo',
+        type: 'INTRAORAL_PHOTO',
+        label: 'Intraoral Photo',
+        description:
+          'Clinical photograph demonstrating fractured cusp, broken coronal structure, or tissue condition.',
+        documentType: 'Intraoral Photo',
+        required: false
+      });
+    }
+
+    // Prosthodontics, Endodontics & Implants recommend Treatment Plans
+    if (code.startsWith('D5') || code.startsWith('D6') || code.startsWith('D33') || code.startsWith('D60')) {
+      requirements.push({
         id: 'treatment-plan',
         type: 'TREATMENT_PLAN',
         label: 'Treatment Plan',
         description:
-          'Treatment plan supporting the proposed procedure.',
-        documentType:
-          'Treatment Plan',
+          'Comprehensive treatment plan supporting multi-visit, endodontic, or indirect restoration.',
+        documentType: 'Treatment Plan',
         required: false
-      }
-    ];
+      });
+    }
+
+    return requirements;
   };
 
   /*
@@ -1266,121 +1294,6 @@ export const NewAudit: React.FC<NewAuditProps> = ({
 
             </div>
 
-
-            {/* AI EXTRACTION */}
-
-            <div className="bg-slate-900 text-slate-200 p-6 rounded-3xl border border-slate-800 shadow-xl">
-
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-
-                <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider">
-
-                  <Sparkles className="w-4 h-4" />
-
-                  Real-Time Clinical Extraction
-
-                  {isExtracting && (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  )}
-
-                </div>
-
-              </div>
-
-              {extractedEvidence ? (
-                <div className="space-y-4 mt-4">
-
-                  <div className="flex flex-wrap gap-2">
-
-                    <span className="text-slate-400 font-semibold">
-                      Target Teeth:
-                    </span>
-
-                    {extractedEvidence.teeth?.map(
-                      tooth => (
-                        <button
-                          key={tooth}
-                          onClick={() =>
-                            setToothNumber(
-                              tooth
-                            )
-                          }
-                          className="font-mono font-bold px-2.5 py-1 rounded-lg text-xs bg-slate-800 text-brand-300 border border-slate-700"
-                        >
-                          Tooth #{tooth}
-                        </button>
-                      )
-                    )}
-
-                  </div>
-
-                  {extractedEvidence.suggested_codes?.length >
-                    0 && (
-                    <div>
-
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                        Suggested CDT Codes
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-
-                        {extractedEvidence.suggested_codes.map(
-                          (code, index) => (
-                            <div
-                              key={
-                                index
-                              }
-                              className="p-3 bg-slate-800 rounded-xl border border-slate-700 flex justify-between"
-                            >
-
-                              <div>
-
-                                <span className="font-mono font-bold text-teal-400">
-                                  {
-                                    code.code ||
-                                    code.cdt_code
-                                  }
-                                </span>
-
-                                <p className="text-[11px] text-slate-300 mt-1">
-                                  {
-                                    code.description ||
-                                    code.procedure_name
-                                  }
-                                </p>
-
-                              </div>
-
-                              <button
-                                onClick={() =>
-                                  setCdtCode(
-                                    code.code ||
-                                      code.cdt_code
-                                  )
-                                }
-                                className="text-[10px] font-bold bg-slate-700 text-white px-2 py-1 rounded-lg"
-                              >
-                                Use
-                              </button>
-
-                            </div>
-                          )
-                        )}
-
-                      </div>
-
-                    </div>
-                  )}
-
-                </div>
-              ) : (
-                <div className="py-6 text-center text-slate-500 text-xs">
-                  Enter clinical notes or load a demo scenario.
-                </div>
-              )}
-
-            </div>
-
           </div>
         )}
 
@@ -2094,7 +2007,7 @@ export const NewAudit: React.FC<NewAuditProps> = ({
                 'Extracting clinical evidence',
                 'Comparing claim and documentation',
                 'Checking evidence consistency',
-                'Calculating documentation readiness'
+                'Identifying missing requirements and recommendations'
               ].map(
                 (text, index) => (
 

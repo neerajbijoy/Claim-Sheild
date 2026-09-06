@@ -87,15 +87,23 @@ export const PayerRules: React.FC = () => {
               <tbody className="divide-y divide-slate-100 font-medium">
                 {rules.map((rule) => {
                   const payerObj = payers.find(p => p.id === selectedPayer);
+                  const isRequired = rule.required !== undefined ? rule.required : !!rule.is_required;
+                  const effectiveDate = rule.effective_from || rule.effective_date || '2026-01-01';
+
                   return (
                     <tr key={rule.id} className="hover:bg-slate-50 transition-colors">
                       <td className="py-4 px-4 font-semibold text-slate-900">
                         {payerObj ? payerObj.display_name : 'Demo Dental Insurance'}
                       </td>
                       <td className="py-4 px-4 font-mono font-bold text-brand-600">{rule.cdt_code}</td>
-                      <td className="py-4 px-4 font-mono text-slate-800 font-semibold">{rule.requirement_type}</td>
                       <td className="py-4 px-4">
-                        {rule.is_required ? (
+                        <span className="font-mono text-slate-800 font-semibold">{rule.requirement_type}</span>
+                        {rule.requirement_description && (
+                          <p className="text-[11px] text-slate-400 font-normal mt-0.5">{rule.requirement_description}</p>
+                        )}
+                      </td>
+                      <td className="py-4 px-4">
+                        {isRequired ? (
                           <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono">
                             <XCircle className="w-3 h-3 text-red-600" /> Required
                           </span>
@@ -105,7 +113,7 @@ export const PayerRules: React.FC = () => {
                           </span>
                         )}
                       </td>
-                      <td className="py-4 px-4 font-mono text-slate-500">{rule.effective_date || '2026-01-01'}</td>
+                      <td className="py-4 px-4 font-mono text-slate-500">{effectiveDate}</td>
                     </tr>
                   );
                 })}

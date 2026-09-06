@@ -283,7 +283,13 @@ export async function extractAssessmentDocumentsApi(
 export async function verifyPayerUrlApi(
   url: string,
   payerName?: string,
-  context?: { procedure?: any; clinical_evidence?: any }
+  context?: {
+    procedure?: any;
+    clinical_evidence?: any;
+    clinical_narrative?: string;
+    documents?: any[];
+    [key: string]: any;
+  }
 ): Promise<any> {
   const res = await fetch(`${API_BASE}/assessment/verify-payer-url`, {
     method: 'POST',
@@ -292,7 +298,9 @@ export async function verifyPayerUrlApi(
       url,
       payer_name: payerName,
       procedure: context?.procedure,
-      clinical_evidence: context?.clinical_evidence
+      clinical_evidence: context?.clinical_evidence,
+      clinical_narrative: context?.clinical_narrative,
+      documents: context?.documents
     })
   });
   const data = await handleResponse(res);

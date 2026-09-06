@@ -56,9 +56,23 @@ function checkEvidenceConsistency(claimTooth, narrativeTeeth = [], documents = [
     if (doc.detectedTooth && primaryTooth && doc.detectedTooth !== primaryTooth) {
       docMatched = false;
     }
+
+    let cleanLabel = doc.name || 'Uploaded Document';
+    const lowerName = cleanLabel.toLowerCase();
+
+    if (doc.type === 'X-Ray / Radiograph' || lowerName.includes('radiograph') || lowerName.includes('xray') || lowerName.includes('x-ray')) {
+      cleanLabel = 'X-Ray Radiograph';
+    } else if (lowerName.includes('doctor') || lowerName.includes('note') || lowerName.includes('clinical')) {
+      cleanLabel = 'Clinical Doctor Note';
+    } else if (lowerName.includes('perio') || lowerName.includes('chart')) {
+      cleanLabel = 'Periodontal Chart';
+    } else {
+      cleanLabel = cleanLabel.replace(/_/g, ' ').replace(/\.[^/.]+$/, '').trim();
+    }
+
     evidenceMap.push({
-      category: doc.type === 'X-Ray / Radiograph' ? 'X-RAY' : 'OTHER_DOC',
-      label: doc.name,
+      category: (doc.type === 'X-Ray / Radiograph' || lowerName.includes('radiograph') || lowerName.includes('xray')) ? 'X-RAY' : 'CLINICAL_NOTE',
+      label: cleanLabel,
       tooth: doc.detectedTooth ? `#${doc.detectedTooth}` : `#${primaryTooth}`,
       matched: docMatched
     });

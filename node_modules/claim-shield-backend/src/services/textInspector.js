@@ -13,6 +13,7 @@ function inspectClinicalText(rules, narrativeText, extractedEvidence) {
   const hasNarrative = narrativeText && narrativeText.trim().length > 10;
 
   if (narrativeRule) {
+    const isNarrativeRequired = narrativeRule.required !== undefined ? narrativeRule.required : !!narrativeRule.is_required;
     if (hasNarrative) {
       checks.push({
         type: 'CLINICAL_NARRATIVE',
@@ -20,7 +21,7 @@ function inspectClinicalText(rules, narrativeText, extractedEvidence) {
         title: 'Clinical Narrative Verified',
         message: 'Detailed clinical narrative is attached to claim.'
       });
-    } else if (narrativeRule.is_required) {
+    } else if (isNarrativeRequired) {
       checks.push({
         type: 'CLINICAL_NARRATIVE',
         status: 'FAILED',
@@ -40,6 +41,7 @@ function inspectClinicalText(rules, narrativeText, extractedEvidence) {
   }
 
   if (justificationRule && hasNarrative) {
+    const isJustificationRequired = justificationRule.required !== undefined ? justificationRule.required : !!justificationRule.is_required;
     if (extractedEvidence.clinical_justification_detected) {
       checks.push({
         type: 'CLINICAL_JUSTIFICATION',
@@ -47,7 +49,7 @@ function inspectClinicalText(rules, narrativeText, extractedEvidence) {
         title: 'Clinical Support Identified',
         message: `Supporting clinical indicators detected (${extractedEvidence.conditions.join(', ') || 'crown necessity'}) with ${Math.round(extractedEvidence.confidence * 100)}% confidence.`
       });
-    } else if (justificationRule.is_required) {
+    } else if (isJustificationRequired) {
       checks.push({
         type: 'CLINICAL_JUSTIFICATION',
         status: 'WARNING',

@@ -442,23 +442,36 @@ const db = {
       created_at: nowIso
     };
 
+    const dbDocWithText = {
+      ...dbDoc,
+      extracted_text: docData.extracted_text || docData.extractedText || null,
+      extraction_status: docData.extraction_status || docData.extractionStatus || 'SUCCESS'
+    };
+
     if (isConfigured) {
-      const { error } = await supabase.from('documents').insert(dbDoc);
+      let { error } = await supabase.from('documents').insert(dbDocWithText);
+      if (error && (error.message.includes('extracted_text') || error.code === 'PGRST204')) {
+        // Fallback: Supabase table missing extracted_text column, insert standard fields only
+        const { error: fallbackError } = await supabase.from('documents').insert(dbDoc);
+        error = fallbackError;
+      }
       if (error) {
         console.error('[Supabase DB] Error saving document metadata:', error.message);
       } else {
-        return {
-          ...dbDoc,
-          file_size: docData.file_size || docData.fileSize || 0,
-          extracted_text: docData.extracted_text || docData.extractedText || ''
+        const resultDoc = {
+          ...dbDocWithText,
+          file_size: docData.file_size || docData.fileSize || 0
         };
+        const mIdx = mockStore.documents.findIndex(d => d.id === docUuid);
+        if (mIdx !== -1) mockStore.documents[mIdx] = resultDoc;
+        else mockStore.documents.push(resultDoc);
+        return resultDoc;
       }
     }
 
     const fallbackDoc = {
-      ...dbDoc,
+      ...dbDocWithText,
       file_size: docData.file_size || docData.fileSize || 0,
-      extracted_text: docData.extracted_text || docData.extractedText || '',
       uploaded_at: nowIso
     };
     mockStore.documents.push(fallbackDoc);
@@ -466,6 +479,7 @@ const db = {
   },
 
   getDocumentsByClaim: async (claimId) => {
+    const localDocs = mockStore.documents.filter(d => d.claim_id === claimId);
     if (isConfigured) {
       let claimUuid = claimId;
       if (!isUuid(claimId)) {
@@ -474,9 +488,18 @@ const db = {
       }
       let query = supabase.from('documents').select('*').eq('claim_id', claimUuid);
       const { data, error } = await query;
-      if (!error && data) return data;
+      if (!error && data) {
+        return data.map(row => {
+          const local = localDocs.find(d => d.id === row.id);
+          return {
+            ...row,
+            extracted_text: (local && local.extracted_text) ? local.extracted_text : (row.extracted_text || null),
+            extraction_status: (local && local.extraction_status) ? local.extraction_status : (row.extraction_status || 'SUCCESS')
+          };
+        });
+      }
     }
-    return mockStore.documents.filter(d => d.claim_id === claimId);
+    return localDocs;
   },
 
   deleteDocument: async (docId) => {

@@ -66,32 +66,51 @@ export const EvidenceMap: React.FC<EvidenceMapProps> = ({
 
         {/* Bottom Nodes Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl">
-          {displayNodes.map((node, i) => (
-            <div
-              key={i}
-              className={`p-4 rounded-2xl border transition-all flex flex-col items-center text-center space-y-2 ${
-                node.matched
-                  ? 'bg-slate-800/90 border-emerald-500/40 shadow-lg shadow-emerald-950/20'
-                  : 'bg-red-950/40 border-red-500/60 shadow-lg shadow-red-950/40 animate-pulse'
-              }`}
-            >
-              <div className="p-2 rounded-xl bg-slate-800 text-slate-300">
-                {node.category === 'X-RAY' ? <Image className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-              </div>
-              <div>
-                <p className="text-[11px] font-medium text-slate-400">{node.label}</p>
-                <p className="text-base font-mono font-extrabold text-white mt-0.5">{node.tooth}</p>
-              </div>
+          {displayNodes.map((node, i) => {
+            let labelText = node.label || 'Document';
+            const rawLabel = labelText;
+            if (labelText.endsWith('.pdf') || labelText.endsWith('.jpg') || labelText.endsWith('.png') || labelText.includes('_')) {
+              const lower = labelText.toLowerCase();
+              if (lower.includes('radiograph') || lower.includes('xray') || lower.includes('x-ray')) {
+                labelText = 'X-Ray Radiograph';
+              } else if (lower.includes('doctor') || lower.includes('note') || lower.includes('clinical')) {
+                labelText = 'Clinical Doctor Note';
+              } else if (lower.includes('perio') || lower.includes('chart')) {
+                labelText = 'Periodontal Chart';
+              } else {
+                labelText = labelText.replace(/_/g, ' ').replace(/\.[^/.]+$/, '').trim();
+              }
+            }
 
+            return (
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
-                  node.matched ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-red-500/20 text-red-400 border border-red-500/50'
+                key={i}
+                className={`p-4 rounded-2xl border transition-all flex flex-col items-center text-center space-y-2 overflow-hidden ${
+                  node.matched
+                    ? 'bg-slate-800/90 border-emerald-500/40 shadow-lg shadow-emerald-950/20'
+                    : 'bg-red-950/40 border-red-500/60 shadow-lg shadow-red-950/40 animate-pulse'
                 }`}
               >
-                {node.matched ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                <div className="p-2 rounded-xl bg-slate-800 text-slate-300">
+                  {node.category === 'X-RAY' ? <Image className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                </div>
+                <div className="w-full">
+                  <p className="text-[11px] font-medium text-slate-400 truncate max-w-full px-1" title={rawLabel}>
+                    {labelText}
+                  </p>
+                  <p className="text-base font-mono font-extrabold text-white mt-0.5">{node.tooth}</p>
+                </div>
+
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                    node.matched ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-red-500/20 text-red-400 border border-red-500/50'
+                  }`}
+                >
+                  {node.matched ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldAlert, ShieldX, Clock, ArrowUpRight, Plus, RefreshCw, FileText, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, ShieldX, Clock, ArrowUpRight, Plus, RefreshCw, FileText, CheckCircle2, Sparkles } from 'lucide-react';
 import { Claim } from '../types';
 import { fetchClaims } from '../services/api';
 
 interface DashboardProps {
   onSelectClaim: (claimId: string) => void;
   onNewAudit: () => void;
+  onSmartAssessment?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onSelectClaim, onNewAudit }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onSelectClaim, onNewAudit, onSmartAssessment }) => {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -20,9 +21,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectClaim, onNewAudit 
     setLoading(true);
     try {
       const data = await fetchClaims();
-      setClaims(data);
+      setClaims(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed loading dashboard claims:', err);
+      setClaims([]);
     } finally {
       setLoading(false);
     }
@@ -41,7 +43,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectClaim, onNewAudit 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 to-indigo-950 p-6 rounded-3xl text-white shadow-xl">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 to-indigo-950 p-6 rounded-3xl text-white shadow-xl">
         <div className="space-y-1">
           <div className="text-xs font-mono font-bold text-teal-400 uppercase tracking-widest">Good Morning</div>
           <h2 className="text-2xl font-extrabold tracking-tight">Protect your next claim.</h2>
@@ -50,13 +52,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectClaim, onNewAudit 
           </p>
         </div>
 
-        <button
-          onClick={onNewAudit}
-          className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-5 py-3 rounded-2xl shadow-lg shadow-brand-600/30 flex items-center gap-2 transition-all shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>START NEW PRE-SUBMISSION AUDIT</span>
-        </button>
+        <div className="flex items-center flex-wrap gap-3">
+          <button
+            onClick={onSmartAssessment}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-3 rounded-2xl shadow-lg shadow-emerald-600/30 flex items-center gap-2.5 transition-all shrink-0 group border border-emerald-500/40"
+          >
+            <Sparkles className="w-4 h-4 text-emerald-200 group-hover:rotate-12 transition-transform" />
+            <div className="text-left">
+              <div className="font-extrabold">Smart Claim Assessment</div>
+              <div className="text-[9px] font-normal text-emerald-100 hidden sm:block">
+                Assess claim readiness & rejection risk
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={onNewAudit}
+            className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-5 py-3 rounded-2xl shadow-lg shadow-brand-600/30 flex items-center gap-2 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>START NEW PRE-SUBMISSION AUDIT</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
